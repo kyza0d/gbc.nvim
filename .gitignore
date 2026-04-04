@@ -1,0 +1,10 @@
+*.o
+.codex
+nvim.log
+.tmp/
+native/.build/
+native/sameboy-host
+.prompts/
+tests/roms/*.gb
+tests/roms/*.gbc
+doc/tags

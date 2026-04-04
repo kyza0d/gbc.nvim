@@ -1,0 +1,250 @@
+*gbc.txt*                            Game Boy / Game Boy Color in Neovim
+
+
+gbc.nvim                                                    *gbc.nvim*
+                                                              *gbc*
+
+gbc.nvim is a Game Boy / Game Boy Color emulator plugin for |Neovim|.
+It embeds the SameBoy emulator core in a small native bridge process and
+renders frames inside Neovim using pure Lua.
+
+The Lua side owns:
+  - plugin configuration and commands
+  - buffer/window management
+  - renderer selection (kitty / cell / auto)
+  - key handling and input mapping
+  - logs, status lines, and simple UI
+
+The native side owns:
+  - SameBoy lifecycle
+  - ROM loading and frame stepping
+  - audio sample production
+  - save RAM and save states
+
+For an architectural overview, see the project README and the original
+architecture outline in the repository history, which draw heavily on the
+patterns from |actually-doom.nvim|.
+
+
+==============================================================================
+CONTENTS                                                  *gbc-contents*
+
+  1. Commands ...................................... |gbc-commands|
+  2. Configuration ................................. |gbc-config|
+  3. Renderers and terminals ....................... |gbc-renderers|
+  4. ROMs, saves, and states ....................... |gbc-roms|
+  5. Input and controls (TODO) ............... |gbc-input|
+  6. Troubleshooting ............................... |gbc-troubleshooting|
+  7. Development notes ............................. |gbc-development|
+
+
+==============================================================================
+1. Commands                                             *gbc-commands*
+
+gbc.nvim defines two user commands:
+
+                                                  *:GB*
+:GB {rom_path}
+    Launch the emulator with the ROM at {rom_path}.
+
+    - {rom_path} should usually be an absolute path.
+    - The path is validated before the emulator is started.
+    - The native SameBoy bridge executable is built on demand via |make|.
+    - A dedicated buffer is opened, and frames are streamed into it while
+      the emulator is running.
+
+    Examples: >
+      :GB /absolute/path/to/rom.gb
+      :GB /absolute/path/to/rom.gbc
+<
+
+                                                  *:GBCheck*
+:GBCheck
+    Build or verify the native bridge executable used by gbc.nvim.
+
+    This is mostly useful when:
+      - you have just installed the plugin;
+      - you changed compilers or system libraries; or
+      - you want to pre-build the bridge before launching a ROM.
+
+
+==============================================================================
+2. Configuration                                          *gbc-config*
+
+Call |require()| and `setup()` from your plugin manager or init.lua: >
+  require("gbc").setup({
+    renderer = "auto",
+    audio = false,
+    target_fps = 60,
+    kitty_present_delay_ms = 750,
+    tmux_passthrough = nil,  -- see below
+  })
+<
+
+The main options are:
+
+`renderer`                                                  *gbc-config-renderer*
+    String: `"auto"`, `"kitty"`, or `"cell"`.
+
+    - `"auto"`  : choose the best renderer based on the terminal and tmux
+                  capabilities (see |gbc-renderers|).
+    - `"kitty"` : force the kitty graphics backend.
+    - `"cell"`  : always use the fallback cell-based renderer.
+
+
+`audio`                                                      *gbc-config-audio*
+    Boolean: enable (true) or disable (false) audio output.
+
+    The concrete audio backend is intentionally host-specific and may change
+    over time. When audio is off, gbc.nvim still drives the emulator at full
+    speed but drops audio samples.
+
+
+`target_fps`                                            *gbc-config-target-fps*
+    Number: target frames per second (default: 60).
+
+    The frameloop tries to maintain this rate. Invalid or extreme values are
+    clamped back toward a 60 fps baseline; see |gbc-fps| for notes.
+
+
+`kitty_present_delay_ms`                        *gbc-config-kitty-present-delay*
+    Number: delay in milliseconds used to detect kitty graphics support and
+    settle terminal state before switching into high-bandwidth rendering.
+
+
+`tmux_passthrough`                              *gbc-config-tmux-passthrough*
+    Boolean or `nil`.
+
+    - `nil` (default) : auto-detect whether tmux kitty-passthrough is
+                        available and safe to use.
+    - `true`          : attempt kitty passthrough even when terminal facts
+                        are inconclusive.
+    - `false`         : never use tmux passthrough; favor cell rendering.
+
+
+The current in-memory configuration can be inspected from Lua: >
+  :lua print(vim.inspect(require("gbc").config()))
+<
+
+
+==============================================================================
+3. Renderers and terminals                               *gbc-renderers*
+
+gbc.nvim supports multiple rendering backends:
+
+`kitty`    High-performance kitty graphics transport with shared memory.
+           This is the preferred mode when running inside kitty or a tmux
+           session that advertises kitty passthrough.
+
+`cell`     A portable, purely text-based terminal renderer that approximates
+           the Game Boy screen using terminal cells. Slower and lower fidelity,
+           but works almost everywhere.
+
+`auto`     The default. At startup, gbc.nvim:
+             - probes terminfo and environment variables;
+             - checks for kitty-specific control sequences;
+             - detects tmux and whether passthrough is enabled;
+             - selects `kitty` when safe, otherwise falls back to `cell`.
+
+For fine control you can:
+
+  - Set `renderer = "kitty"` or `"cell"` in |gbc-config|.
+  - Keep `renderer = "auto"` and rely on the defaults, which are tuned to
+    avoid broken output in tmux and unknown terminals.
+
+
+==============================================================================
+4. ROMs, saves, and states                                  *gbc-roms*
+
+ROMs                                                             *gbc-roms-roms*
+
+`:GB` expects a path to a Game Boy (`.gb`) or Game Boy Color
+(`.gbc`) ROM image. The plugin does not ship any ROMs.
+
+For licensing reasons, the test ROMs used during development are not
+included in the public repository. You should provide your own ROMs when
+running tests or benchmarks.
+
+
+Saves and save states                                        *gbc-roms-saves*
+
+The SameBoy-based bridge is responsible for:
+  - battery-backed save RAM (cartridge saves);
+  - optional quick save states.
+
+The exact on-disk layout is intentionally kept in the native layer so that
+it can evolve independently of the Lua API. Future versions of gbc.nvim may
+add explicit commands and UI for managing save slots.
+
+
+==============================================================================
+5. Input and controls (TODO)                               *gbc-input*
+
+Input controls are not implemented yet.
+
+TODO:
+  - document the finalized key mapping once input support lands;
+  - add troubleshooting guidance for key capture and terminal behavior.
+
+
+==============================================================================
+6. Troubleshooting                                  *gbc-troubleshooting*
+
+White screen after launch
+    - Try switching to the cell renderer: >
+        :lua require("gbc").setup({ renderer = "cell" })
+<
+    - Run |:GBCheck| to confirm the native bridge builds successfully.
+    - Check `:messages` for build or runtime errors.
+
+No input response
+    Input controls are not implemented yet. This section will be expanded
+    once key input support is available.
+
+Poor performance or lag
+    - Lower |gbc-config-target-fps|: >
+        :lua require("gbc").setup({ target_fps = 45 })
+<
+    - Use the `cell` renderer in underpowered or remote terminals.
+    - Avoid running multiple heavy plugins or LSP servers in the same
+      Neovim instance while playing.
+
+TTY / terminal glitches
+    - If running inside tmux, try disabling passthrough: >
+        :lua require("gbc").setup({ tmux_passthrough = false })
+<
+    - Confirm your terminal supports kitty graphics before forcing
+      `renderer = "kitty"`.
+
+
+==============================================================================
+7. Development notes                                  *gbc-development*
+
+Running tests
+    The plugin ships a small test suite that can be run with: >
+      make test
+<
+    This uses |nvim| in headless mode and exercises both the frameloop and
+    core UI helpers.
+
+Building the native bridge
+    To build (or rebuild) the SameBoy bridge: >
+      make
+<
+    The bridge is implemented in `native/sameboy-host.c` and links against
+    the SameBoy sources vendored into `native/vendor/SameBoy`.
+
+Architecture reference
+    gbc.nvim’s overall shape is heavily inspired by |actually-doom.nvim|:
+      - native executable owns the game engine/runtime;
+      - Lua starts it with |vim.system()|;
+      - a small binary protocol over a Unix domain socket passes frames and
+        input between the two sides;
+      - Neovim-facing behavior (buffers, windows, renderers) stays in Lua.
+
+    The original `doc/architecture.md` used during development can be found
+    in the repository history and offers more context on the design tradeoffs,
+    SameBoy integration details, and protocol choices.
+
+
+vim:tw=78:ts=8:ft=help:norl:
