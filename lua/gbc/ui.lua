@@ -318,6 +318,7 @@ function Screen:ensure_buffer()
   })
   api.nvim_chan_send(self.term_chan, '\27[?25l\27[?7l')
   api.nvim_set_option_value('scrollback', 1, { buf = self.buf })
+  api.nvim_buf_set_keymap(self.buf, 't', '<Esc>', '<Esc>', { noremap = true, nowait = true, silent = true })
 
   state.screen_buf = self.buf
   self:_ensure_autocmds()
@@ -488,6 +489,7 @@ function M.open(rom_path, opts)
     refresh_log()
     screen:clear()
     api.nvim_set_current_win(screen.win)
+    vim.cmd('startinsert')
   end)
 
   return {

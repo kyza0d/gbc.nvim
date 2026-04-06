@@ -4,6 +4,20 @@ local defaults = {
   target_fps = 60,
   kitty_present_delay_ms = 750,
   tmux_passthrough = os.getenv('TMUX') ~= nil,
+  controls = {
+    enabled = true,
+    key_hold_ms = 75,
+    mapping = {
+      ['<Left>'] = 'LEFT',
+      ['<Right>'] = 'RIGHT',
+      ['<Up>'] = 'UP',
+      ['<Down>'] = 'DOWN',
+      z = 'B',
+      x = 'A',
+      ['<Space>'] = 'SELECT',
+      ['<CR>'] = 'START',
+    },
+  },
 }
 
 local values = vim.deepcopy(defaults)

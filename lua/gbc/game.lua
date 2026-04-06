@@ -1,5 +1,6 @@
 local build = require('gbc.build')
 local config = require('gbc.config')
+local controls = require('gbc.controls')
 local input = require('gbc.input')
 local kitty_support = require('gbc.kitty_support')
 local profile = require('gbc.profile')
@@ -143,6 +144,7 @@ local function stop_active_session(reason)
   if not active then return end
 
   session.current = nil
+  controls.detach(active)
   cancel_frame_timer(active)
   if active.transport and active.transport.connected then
     active.stop_sent = true
@@ -518,6 +520,7 @@ function M.start(rom_path, launch_opts)
   stop_active_session('restarting')
 
   local current_config = config.get()
+  local controls_config = current_config.controls or {}
   local target_fps = normalize_target_fps(current_config.target_fps)
   local selection = resolve_renderer_plan(current_config.renderer, current_config, launch_opts)
   local current = {
@@ -547,6 +550,21 @@ function M.start(rom_path, launch_opts)
     tmux_passthrough = current_config.tmux_passthrough,
     terminal_info = kitty_support.describe_terminal(selection.terminal_facts),
   })
+  local screen = ui.screen()
+  local controls_ok, controls_err = controls.attach(current, {
+    enabled = controls_config.enabled,
+    key_hold_ms = controls_config.key_hold_ms,
+    mapping = controls_config.mapping,
+    buf = screen and screen.buf or nil,
+  })
+  if controls_ok then
+    ui.record_event('controls attached')
+  elseif controls_config.enabled ~= false then
+    log('Failed to attach controls: ' .. tostring(controls_err), vim.log.levels.WARN)
+    ui.record_event('controls unavailable')
+  else
+    ui.record_event('controls disabled')
+  end
   if selection.fallback_reason then ui.set_renderer_fallback_reason(selection.fallback_reason) end
   ui.set_terminal_info(kitty_support.describe_terminal(selection.terminal_facts))
   ui.set_renderer_requested(current.requested_renderer)
