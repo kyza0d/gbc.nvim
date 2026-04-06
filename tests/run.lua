@@ -32,6 +32,11 @@ for _, case in ipairs(tests) do
   run_case(case.name, case.run)
 end
 
+tests = require('tests.test_controls')
+for _, case in ipairs(tests) do
+  run_case(case.name, case.run)
+end
+
 tests = require('tests.test_ui')
 for _, case in ipairs(tests) do
   run_case(case.name, case.run)

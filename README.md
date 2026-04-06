@@ -76,8 +76,32 @@ require("gbc").setup({
   target_fps = 60,                -- target frames per second
   kitty_present_delay_ms = 750,   -- delay for kitty graphics
   tmux_passthrough = <auto>,      -- enable tmux passthrough
+  controls = {
+    enabled = true,               -- capture keyboard input in the game screen
+    key_hold_ms = 75,             -- key hold duration before auto-release
+    mapping = {                   -- key -> button
+      ["<Left>"] = "LEFT",
+      ["<Right>"] = "RIGHT",
+      ["<Up>"] = "UP",
+      ["<Down>"] = "DOWN",
+      z = "B",
+      x = "A",
+      ["<Space>"] = "SELECT",
+      ["<CR>"] = "START",
+    },
+  },
 })
 ```
+
+## Controls
+
+Default controls while the game screen is focused:
+
+- D-pad: `<Left>`, `<Right>`, `<Up>`, `<Down>`
+- `A`: `x`
+- `B`: `z`
+- `START`: `<CR>`
+- `SELECT`: `<Space>`
 
 ## Architecture
 
@@ -104,8 +128,9 @@ Any Game Boy or Game Boy Color ROM should work. Tested with:
 - Check the native bridge build: `:GBCheck`
 
 **No input response:**
-- Ensure the buffer is in focus
-- Check key mappings in your config
+- Ensure the game screen window is focused (Terminal mode)
+- Check `controls.mapping` and `controls.key_hold_ms` in your config
+- Check for conflicting terminal-mode mappings from other plugins
 
 **Poor performance:**
 - Lower `target_fps` in config
