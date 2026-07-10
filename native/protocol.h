@@ -24,6 +24,12 @@
  *     u8[shm_name_len] shm name bytes (empty string disables shm transport)
  *   CMSG_STOP
  *     no payload
+ *   CMSG_SAVE_STATE
+ *     u16 state_path_len
+ *     u8[state_path_len] state path bytes
+ *   CMSG_LOAD_STATE
+ *     u16 state_path_len
+ *     u8[state_path_len] state path bytes
  *
  * Native -> Lua:
  *   AMSG_INIT
@@ -40,6 +46,10 @@
  *     UTF-8 text payload
  *   AMSG_QUIT
  *     UTF-8 text payload
+ *   AMSG_STATE_RESULT
+ *     u8 op (1 = save, 2 = load)
+ *     u8 ok (0 = failure, 1 = success)
+ *     u8[] UTF-8 detail (state path on success, error text on failure)
  */
 
 #define GBC_PROTOCOL_HEADER_SIZE 3
@@ -63,6 +73,13 @@ enum gbc_client_message_id {
   GBC_CMSG_RUN_FRAME,
   GBC_CMSG_SET_FRAME_SHM_NAME,
   GBC_CMSG_STOP,
+  GBC_CMSG_SAVE_STATE,
+  GBC_CMSG_LOAD_STATE,
+};
+
+enum gbc_state_op {
+  GBC_STATE_OP_SAVE = 1,
+  GBC_STATE_OP_LOAD = 2,
 };
 
 enum gbc_host_message_id {
@@ -70,6 +87,7 @@ enum gbc_host_message_id {
   GBC_AMSG_FRAME,
   GBC_AMSG_LOG,
   GBC_AMSG_QUIT,
+  GBC_AMSG_STATE_RESULT,
 };
 
 #endif /* GBC_PROTOCOL_H */

@@ -13,9 +13,10 @@ endif
 
 NATIVE_DIR := native
 TARGET := $(NATIVE_DIR)/sameboy-host
-SOURCES := $(NATIVE_DIR)/sameboy-host.c
+SOURCES := $(NATIVE_DIR)/sameboy-host.c $(NATIVE_DIR)/audio.c
 SAMEBOY_DIR := $(NATIVE_DIR)/vendor/SameBoy
 SAMEBOY_CORE_DIR := $(SAMEBOY_DIR)/Core
+MINIAUDIO_DIR := $(NATIVE_DIR)/vendor/miniaudio
 SAMEBOY_BUILD_DIR := $(NATIVE_DIR)/.build
 
 include $(SAMEBOY_DIR)/version.mk
@@ -39,9 +40,9 @@ SAMEBOY_DISABLED_SOURCES := \
 SAMEBOY_CORE_SOURCES := $(filter-out $(SAMEBOY_DISABLED_SOURCES),$(wildcard $(SAMEBOY_CORE_DIR)/*.c))
 SAMEBOY_CORE_HEADERS := $(wildcard $(SAMEBOY_CORE_DIR)/*.h) $(wildcard $(SAMEBOY_CORE_DIR)/graphics/*.inc)
 SAMEBOY_CORE_OBJECTS := $(patsubst $(SAMEBOY_DIR)/%.c,$(SAMEBOY_BUILD_DIR)/%.o,$(SAMEBOY_CORE_SOURCES))
-HOST_OBJECT := $(SAMEBOY_BUILD_DIR)/sameboy-host.o
+HOST_OBJECTS := $(patsubst $(NATIVE_DIR)/%.c,$(SAMEBOY_BUILD_DIR)/%.o,$(SOURCES))
 
-LDFLAGS += -lm -ldl
+LDFLAGS += -lm -ldl -lpthread
 
 .PHONY: all clean sameboy-lib test
 
@@ -53,11 +54,11 @@ $(SAMEBOY_BUILD_DIR)/Core/%.o: $(SAMEBOY_CORE_DIR)/%.c $(SAMEBOY_CORE_HEADERS)
 	@mkdir -p $(dir $@)
 	$(CC) $(SAMEBOY_CFLAGS) $(SAMEBOY_DEFS) $(SAMEBOY_INCLUDES) -DGB_INTERNAL -c $< -o $@
 
-$(HOST_OBJECT): $(SOURCES) $(NATIVE_DIR)/protocol.h $(SAMEBOY_CORE_HEADERS)
+$(SAMEBOY_BUILD_DIR)/%.o: $(NATIVE_DIR)/%.c $(NATIVE_DIR)/protocol.h $(SAMEBOY_CORE_HEADERS)
 	@mkdir -p $(dir $@)
-	$(CC) $(HOST_CFLAGS) $(SAMEBOY_DEFS) $(SAMEBOY_INCLUDES) -c $< -o $@
+	$(CC) $(HOST_CFLAGS) $(SAMEBOY_DEFS) $(SAMEBOY_INCLUDES) -I$(MINIAUDIO_DIR) -c $< -o $@
 
-$(TARGET): $(HOST_OBJECT) $(SAMEBOY_CORE_OBJECTS)
+$(TARGET): $(HOST_OBJECTS) $(SAMEBOY_CORE_OBJECTS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 clean:

@@ -15,6 +15,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "audio.h"
 #include "protocol.h"
 #include "vendor/SameBoy/Core/gb.h"
 
@@ -378,6 +379,11 @@ static void close_frame_shm(struct gbc_session *session) {
   }
 }
 
+static void sameboy_sample_callback(GB_gameboy_t *gb, GB_sample_t *sample) {
+  (void)gb;
+  gbc_audio_push_sample(sample->left, sample->right);
+}
+
 static uint32_t sameboy_rgb_encode(GB_gameboy_t *gb, uint8_t r, uint8_t g, uint8_t b) {
   (void)gb;
   return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
@@ -531,6 +537,8 @@ static void convert_framebuffer_rgb24(struct gbc_session *session, uint8_t *targ
 }
 
 static void session_reset(struct gbc_session *session) {
+  gbc_audio_stop();
+
   if (session->gb != NULL) {
     if (GB_is_inited(session->gb)) {
       GB_free(session->gb);
@@ -609,6 +617,13 @@ static int session_init(struct gbc_session *session, const struct gbc_init_reque
   if (send_text(fd, GBC_AMSG_LOG, "SameBoy session initialized") < 0 ||
       send_init(fd, session) < 0) {
     return -1;
+  }
+
+  if (request->audio_enabled) {
+    GB_set_sample_rate(session->gb, 44100);
+    GB_apu_set_sample_callback(session->gb, sameboy_sample_callback);
+    gbc_audio_start();
+    send_text(fd, GBC_AMSG_LOG, "Audio initialized");
   }
 
   return 0;
@@ -705,6 +720,87 @@ static int write_frame_shm(struct gbc_session *session, int fd) {
   }
 
   return send_frame_shm_ready(fd, session);
+}
+
+static int send_state_result(int fd, uint8_t op, bool ok, const char *detail) {
+  size_t detail_length = detail == NULL ? 0 : strlen(detail);
+  size_t payload_length = 2 + detail_length;
+  uint8_t *payload = malloc(payload_length);
+  if (payload == NULL) {
+    fprintf(stderr, "[gbc-native] failed to allocate state result payload\n");
+    return -1;
+  }
+
+  payload[0] = op;
+  payload[1] = ok ? 1 : 0;
+  if (detail_length > 0) {
+    memcpy(payload + 2, detail, detail_length);
+  }
+
+  int result = send_message(fd, GBC_AMSG_STATE_RESULT, payload, payload_length);
+  free(payload);
+  return result;
+}
+
+/* CMSG_SAVE_STATE / CMSG_LOAD_STATE share the same u16-prefixed path payload. */
+static char *parse_state_path(const uint8_t *payload, uint16_t payload_length) {
+  if (payload_length < 2) {
+    fprintf(stderr, "[gbc-native] state message payload too short (%u bytes)\n", payload_length);
+    return NULL;
+  }
+
+  uint16_t path_length = read_u16(payload);
+  if (path_length == 0 || payload_length != (uint16_t)(path_length + 2)) {
+    fprintf(stderr,
+            "[gbc-native] state message payload length mismatch (expected %u bytes, got %u)\n",
+            (unsigned)(path_length + 2),
+            payload_length);
+    return NULL;
+  }
+
+  char *path = calloc((size_t)path_length + 1, 1);
+  if (path == NULL) {
+    fprintf(stderr, "[gbc-native] failed to allocate state path buffer\n");
+    return NULL;
+  }
+
+  memcpy(path, payload + 2, path_length);
+  return path;
+}
+
+static int session_handle_state(struct gbc_session *session,
+                                uint8_t op,
+                                const uint8_t *payload,
+                                uint16_t payload_length,
+                                int fd) {
+  char *path = parse_state_path(payload, payload_length);
+  if (path == NULL) {
+    return send_state_result(fd, op, false, "invalid state payload");
+  }
+
+  if (!session->initialized) {
+    free(path);
+    return send_state_result(fd, op, false, "session not initialized");
+  }
+
+  int status;
+  if (op == GBC_STATE_OP_SAVE) {
+    status = GB_save_state(session->gb, path);
+  }
+  else {
+    status = GB_load_state(session->gb, path);
+  }
+
+  int result;
+  if (status == 0) {
+    result = send_state_result(fd, op, true, path);
+  }
+  else {
+    result = send_state_result(fd, op, false, strerror(status > 0 ? status : errno));
+  }
+
+  free(path);
+  return result;
 }
 
 static int session_run_frame(struct gbc_session *session, int fd) {
@@ -862,6 +958,14 @@ int main(int argc, char **argv) {
           send_text(client_fd, GBC_AMSG_QUIT, "set_frame_shm_name failed");
           running = false;
         }
+        break;
+
+      case GBC_CMSG_SAVE_STATE:
+        session_handle_state(&session, GBC_STATE_OP_SAVE, message.payload, message.payload_length, client_fd);
+        break;
+
+      case GBC_CMSG_LOAD_STATE:
+        session_handle_state(&session, GBC_STATE_OP_LOAD, message.payload, message.payload_length, client_fd);
         break;
 
       case GBC_CMSG_STOP:
