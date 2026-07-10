@@ -164,6 +164,7 @@ local function refresh_log_now()
 
   local lines = profile.time('ui.refresh_log.build_lines', build_log_lines, state)
   profile.time('ui.refresh_log.set_lines', api.nvim_buf_set_lines, buf, 0, -1, false, lines)
+  pcall(function() require('gbc.ui.winbar').refresh() end)
 end
 
 local function refresh_log()
@@ -274,6 +275,7 @@ function Screen:_ensure_autocmds()
 
       self.win = nil
       state.screen_win = nil
+      pcall(function() require('gbc.ui.winbar').detach() end)
     end,
     desc = '[gbc.nvim] Track the active screen window',
   })
@@ -488,6 +490,7 @@ function M.open(rom_path, opts)
 
     refresh_log()
     screen:clear()
+    require('gbc.ui.winbar').attach(screen.win, screen.buf)
     api.nvim_set_current_win(screen.win)
     vim.cmd('startinsert')
   end)

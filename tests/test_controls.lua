@@ -13,12 +13,12 @@ M[#M + 1] = {
   name = 'controls normalize mapping resolves known button names',
   run = function()
     local normalized = controls._test.normalize_mapping({
-      ['<Left>'] = 'LEFT',
+      h = 'LEFT',
       x = 'A',
       ['<F1>'] = 'UNKNOWN_BUTTON',
     })
 
-    assert_equal(normalized[controls._test.normalize_key('<Left>')], input.button.LEFT, 'left arrow should map to LEFT')
+    assert_equal(normalized[controls._test.normalize_key('h')], input.button.LEFT, 'h should map to LEFT')
     assert_equal(normalized[controls._test.normalize_key('x')], input.button.A, 'x should map to A')
     assert_equal(normalized[controls._test.normalize_key('<F1>')], nil, 'unknown button names should be ignored')
   end,

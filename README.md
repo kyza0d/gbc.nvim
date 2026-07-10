@@ -17,7 +17,7 @@ A Game Boy / Game Boy Color emulator plugin for Neovim. Play classic games direc
 
 ### Requirements
 
-- Neovim (0.7+)
+- Neovim 0.7+
 - C compiler (gcc, clang, or similar)
 - Make
 
@@ -75,15 +75,15 @@ require("gbc").setup({
   audio = false,                  -- enable audio playback
   target_fps = 60,                -- target frames per second
   kitty_present_delay_ms = 750,   -- delay for kitty graphics
-  tmux_passthrough = <auto>,      -- enable tmux passthrough
+  tmux_passthrough = false,       -- auto-detected (true if $TMUX is set)
   controls = {
     enabled = true,               -- capture keyboard input in the game screen
     key_hold_ms = 75,             -- key hold duration before auto-release
     mapping = {                   -- key -> button
-      ["<Left>"] = "LEFT",
-      ["<Right>"] = "RIGHT",
-      ["<Up>"] = "UP",
-      ["<Down>"] = "DOWN",
+      h = "LEFT",
+      l = "RIGHT",
+      k = "UP",
+      j = "DOWN",
       z = "B",
       x = "A",
       ["<Space>"] = "SELECT",
@@ -97,7 +97,7 @@ require("gbc").setup({
 
 Default controls while the game screen is focused:
 
-- D-pad: `<Left>`, `<Right>`, `<Up>`, `<Down>`
+- D-pad: `h` (left), `j` (down), `k` (up), `l` (right)
 - `A`: `x`
 - `B`: `z`
 - `START`: `<CR>`
@@ -128,8 +128,8 @@ Any Game Boy or Game Boy Color ROM should work. Tested with:
 - Check the native bridge build: `:GBCheck`
 
 **No input response:**
-- Ensure the game screen window is focused (Terminal mode)
-- Check `controls.mapping` and `controls.key_hold_ms` in your config
+- Ensure the game screen window is focused (terminal mode)
+- Verify `controls.enabled = true` in your config
 - Check for conflicting terminal-mode mappings from other plugins
 
 **Poor performance:**

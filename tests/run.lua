@@ -47,5 +47,10 @@ for _, case in ipairs(tests) do
   run_case(case.name, case.run)
 end
 
+tests = require('tests.test_winbar')
+for _, case in ipairs(tests) do
+  run_case(case.name, case.run)
+end
+
 print(string.format('%d test(s), %d failure(s)', total, failures))
 if failures > 0 then vim.cmd('cquit ' .. failures) end
