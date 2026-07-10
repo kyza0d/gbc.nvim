@@ -497,6 +497,21 @@ local function handle_protocol_message(current, message)
     return
   end
 
+  if message.type == protocol.host.STATE_RESULT then
+    local op_name = message.data.op == protocol.state_op.SAVE and 'Save' or 'Load'
+    record_event(message.name)
+    if message.data.ok then
+      log(string.format('%s state: %s', op_name, message.data.detail))
+      ui.set_session_status(string.format('%s state ok', op_name:lower()))
+      vim.schedule(
+        function() vim.notify(string.format('gbc.nvim: %s state complete', op_name), vim.log.levels.INFO, { title = 'gbc.nvim' }) end
+      )
+    else
+      log(string.format('%s state failed: %s', op_name, message.data.detail), vim.log.levels.ERROR)
+    end
+    return
+  end
+
   if message.type == protocol.host.QUIT then
     record_event(message.name)
     ui.set_quit_reason(message.data.text)
@@ -508,6 +523,122 @@ local function handle_protocol_message(current, message)
   end
 
   log(string.format('Protocol <- %s: %q', message.name, message.payload), vim.log.levels.WARN)
+end
+
+function M.set_speed(multiplier)
+  local numeric = tonumber(multiplier)
+  if not numeric or numeric <= 0 then
+    vim.notify('gbc.nvim: Speed multiplier must be a positive number (e.g. 2, 0.5)', vim.log.levels.ERROR, { title = 'gbc.nvim' })
+    return
+  end
+
+  local current = session.current
+  if not current then
+    vim.notify('gbc.nvim: No active session. Start a ROM with :GB first.', vim.log.levels.WARN, { title = 'gbc.nvim' })
+    return
+  end
+
+  local loop = current.loop
+  local base_interval_ns = math.floor(1000000000 / loop.target_fps)
+  loop.frame_interval_ns = math.max(1, math.floor(base_interval_ns / numeric))
+  loop.speed_multiplier = numeric
+
+  local label = numeric >= 1 and string.format('%.1fx', numeric) or string.format('%.2fx', numeric)
+  log(string.format('Speed changed to %s (%.2f effective fps)', label, numeric * loop.target_fps))
+  ui.set_session_status(string.format('running at %s (%.2f fps)', label, numeric * loop.target_fps))
+end
+
+local function require_session()
+  local current = session.current
+  if not current or not current.initialized then
+    vim.notify('gbc.nvim: No active session. Start a ROM with :GB first.', vim.log.levels.WARN, { title = 'gbc.nvim' })
+    return nil
+  end
+
+  return current
+end
+
+function M.state_path(slot)
+  local current = session.current
+  if not current or not current.rom_path then return nil end
+
+  slot = tonumber(slot) or 1
+  local dir = vim.fn.stdpath('data') .. '/gbc/states'
+  vim.fn.mkdir(dir, 'p')
+  local rom_name = vim.fn.fnamemodify(current.rom_path, ':t:r'):gsub('[^%w%-_.]', '_')
+  return string.format('%s/%s-%d.state', dir, rom_name, slot)
+end
+
+function M.state_slot_exists(slot)
+  local path = M.state_path(slot)
+  return path ~= nil and vim.fn.filereadable(path) == 1
+end
+
+function M.save_state(slot)
+  local current = require_session()
+  if not current then return end
+
+  local path = M.state_path(slot)
+  if send_message(current, protocol.encode_save_state(path), protocol.client.SAVE_STATE, { log = true }) then
+    record_event(protocol.client_name(protocol.client.SAVE_STATE))
+    log('Saving state to ' .. path)
+  end
+end
+
+function M.load_state(slot)
+  local current = require_session()
+  if not current then return end
+
+  local path = M.state_path(slot)
+  if not M.state_slot_exists(slot) then
+    vim.notify(
+      string.format('gbc.nvim: No saved state in slot %d', tonumber(slot) or 1),
+      vim.log.levels.WARN,
+      { title = 'gbc.nvim' }
+    )
+    return
+  end
+
+  if send_message(current, protocol.encode_load_state(path), protocol.client.LOAD_STATE, { log = true }) then
+    record_event(protocol.client_name(protocol.client.LOAD_STATE))
+    log('Loading state from ' .. path)
+  end
+end
+
+function M.is_paused()
+  local current = session.current
+  return current ~= nil and current.loop ~= nil and current.loop.running == false
+end
+
+function M.toggle_pause()
+  local current = require_session()
+  if not current then return end
+
+  local loop = current.loop
+  if loop.running then
+    loop.running = false
+    cancel_frame_timer(current)
+    ui.set_session_status('paused')
+    log('Paused')
+  else
+    loop.running = true
+    loop.next_due_ns = nil
+    ui.set_session_status('running')
+    log('Resumed')
+    schedule_next_frame(current, 'resume')
+  end
+end
+
+function M.session_info()
+  local current = session.current
+  if not current then return nil end
+
+  return {
+    rom_path = current.rom_path,
+    initialized = current.initialized == true,
+    paused = current.loop and current.loop.running == false,
+    speed_multiplier = current.loop and current.loop.speed_multiplier or 1,
+  }
 end
 
 function M.start(rom_path, launch_opts)
@@ -539,6 +670,7 @@ function M.start(rom_path, launch_opts)
       target_fps = target_fps,
       frame_interval_ns = frame_interval_ns(target_fps),
       next_due_ns = nil,
+      speed_multiplier = 1,
     },
   }
   session.current = current
@@ -707,6 +839,7 @@ M._test = {
   frame_interval_ns = frame_interval_ns,
   advance_frame_deadline = advance_frame_deadline,
   frame_delay_ms = frame_delay_ms,
+  set_speed = M.set_speed,
 }
 
 return M

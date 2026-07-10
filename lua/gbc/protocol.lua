@@ -18,12 +18,19 @@ local M = {
     RUN_FRAME = 3,
     SET_FRAME_SHM_NAME = 4,
     STOP = 5,
+    SAVE_STATE = 6,
+    LOAD_STATE = 7,
   },
   host = {
     INIT = 1,
     FRAME = 2,
     LOG = 3,
     QUIT = 4,
+    STATE_RESULT = 5,
+  },
+  state_op = {
+    SAVE = 1,
+    LOAD = 2,
   },
 }
 
@@ -33,6 +40,8 @@ M.client_names = {
   [M.client.RUN_FRAME] = 'CMSG_RUN_FRAME',
   [M.client.SET_FRAME_SHM_NAME] = 'CMSG_SET_FRAME_SHM_NAME',
   [M.client.STOP] = 'CMSG_STOP',
+  [M.client.SAVE_STATE] = 'CMSG_SAVE_STATE',
+  [M.client.LOAD_STATE] = 'CMSG_LOAD_STATE',
 }
 
 M.host_names = {
@@ -40,6 +49,7 @@ M.host_names = {
   [M.host.FRAME] = 'AMSG_FRAME',
   [M.host.LOG] = 'AMSG_LOG',
   [M.host.QUIT] = 'AMSG_QUIT',
+  [M.host.STATE_RESULT] = 'AMSG_STATE_RESULT',
 }
 
 local function message_name(names, message_type) return names[message_type] or ('UNKNOWN(' .. message_type .. ')') end
@@ -122,6 +132,17 @@ end
 
 function M.encode_stop() return M.encode(M.client.STOP, '') end
 
+local function encode_state_path(message_type, path)
+  assert(type(path) == 'string' and path ~= '', 'protocol state message requires a path')
+  assert(#path <= 0xffff, 'protocol state path must fit in u16')
+
+  return M.encode(message_type, pack_u16(#path) .. path)
+end
+
+function M.encode_save_state(path) return encode_state_path(M.client.SAVE_STATE, path) end
+
+function M.encode_load_state(path) return encode_state_path(M.client.LOAD_STATE, path) end
+
 local function decode_host_init(payload)
   local width, offset = unpack_u16(payload, 1)
   local height
@@ -161,10 +182,24 @@ local function decode_host_frame(payload)
   }
 end
 
+local function decode_host_state_result(payload)
+  local op = payload:byte(1)
+  local ok = payload:byte(2)
+  assert(op and ok, 'protocol payload truncated while reading state result')
+
+  return {
+    op = op,
+    ok = ok == 1,
+    detail = payload:sub(3),
+  }
+end
+
 local function decode_host_message(message_type, payload)
   if message_type == M.host.INIT then return decode_host_init(payload) end
 
   if message_type == M.host.FRAME then return decode_host_frame(payload) end
+
+  if message_type == M.host.STATE_RESULT then return decode_host_state_result(payload) end
 
   return {
     text = payload,

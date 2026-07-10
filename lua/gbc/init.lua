@@ -18,9 +18,7 @@ local function ensure_helptags()
   if vim.fn.isdirectory(doc_dir) ~= 1 or vim.fn.filereadable(doc_dir .. '/gbc.txt') ~= 1 then return end
 
   local tags_path = doc_dir .. '/tags'
-  if vim.fn.filereadable(tags_path) ~= 1 then
-    pcall(vim.cmd.helptags, doc_dir)
-  end
+  if vim.fn.filereadable(tags_path) ~= 1 then pcall(vim.cmd.helptags, doc_dir) end
 end
 
 local function notify(message, level) vim.notify(message, level or vim.log.levels.INFO, { title = 'gbc.nvim' }) end
@@ -52,9 +50,42 @@ local function register_commands()
     nargs = 0,
     desc = 'Build or verify the gbc.nvim native bridge',
   })
+
+  vim.api.nvim_create_user_command('GBSpeed', function(opts) require('gbc.game').set_speed(opts.args) end, {
+    nargs = 1,
+    desc = 'Set emulator speed multiplier (e.g. :GBSpeed 2 for 2x, :GBSpeed 0.5 for half speed)',
+    complete = "customlist,v:lua.require'gbc'._speed_complete",
+  })
+
+  vim.api.nvim_create_user_command(
+    'GBSave',
+    function(opts) require('gbc.game').save_state(opts.args ~= '' and opts.args or 1) end,
+    {
+      nargs = '?',
+      desc = 'Save emulator state to a slot (default 1)',
+    }
+  )
+
+  vim.api.nvim_create_user_command(
+    'GBLoad',
+    function(opts) require('gbc.game').load_state(opts.args ~= '' and opts.args or 1) end,
+    {
+      nargs = '?',
+      desc = 'Load emulator state from a slot (default 1)',
+    }
+  )
+
+  vim.api.nvim_create_user_command('GBPause', function() require('gbc.game').toggle_pause() end, {
+    nargs = 0,
+    desc = 'Toggle emulator pause',
+  })
 end
 
 function M._register_commands() register_commands() end
+
+function M._speed_complete() return { '0.25', '0.5', '1', '2', '3', '4', '5' } end
+
+function M.set_speed(multiplier) require('gbc.game').set_speed(multiplier) end
 
 function M.setup(opts)
   config.setup(opts)
